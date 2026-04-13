@@ -107,6 +107,9 @@ class GeminiModelConfigurator:
                 "voice_name": (VOICE_NAMES, {
                     "default": "Aoede",
                 }),
+                "thinking_level": (["default", "minimal", "low", "medium", "high"], {
+                    "default": "default",
+                }),
             },
         }
 
@@ -114,9 +117,9 @@ class GeminiModelConfigurator:
     RETURN_NAMES = ("gemini_model",)
     FUNCTION = "configure"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Configure the Gemini API key and select a model."
+    DESCRIPTION = "Configure the Gemini API key, select a model, and set thinking level."
 
-    def configure(self, api_key: str, model_name: str, voice_name: str = "Aoede"):
+    def configure(self, api_key: str, model_name: str, voice_name: str = "Aoede", thinking_level: str = "default"):
         if not api_key or not api_key.strip():
             raise ValueError("❌ API key must not be empty.")
 
@@ -129,8 +132,9 @@ class GeminiModelConfigurator:
             "api_key": api_key.strip(),
             "is_live": model_name in LIVE_API_MODELS,
             "voice_name": voice_name,
+            "thinking_level": thinking_level,
         }
-        print(f"✅ [Universal LLM Suite] Configured Gemini model: {model_name} (Voice: {voice_name})")
+        print(f"✅ [Universal LLM Suite] Configured Gemini model: {model_name} (Voice: {voice_name}, Thinking: {thinking_level})")
         return (payload,)
 
 
@@ -201,7 +205,7 @@ class GeminiAPIRunner:
         modalities = ["TEXT"]
         if "gemini-3" in model_name or "audio" in model_name or "tts" in model_name:
             modalities = ["AUDIO", "TEXT"]
-        
+            
         speech_config = None
         if "AUDIO" in modalities:
             speech_config = types.SpeechConfig(
@@ -212,10 +216,20 @@ class GeminiAPIRunner:
                 )
             )
 
+        thinking_level = gemini_model.get("thinking_level", "default")
+        thinking_config = None
+        if thinking_level != "default":
+            try:
+                thinking_config = types.ThinkingConfig(thinking_level=thinking_level)
+            except Exception:
+                # Fallback if SDK structure differs
+                thinking_config = {"thinking_level": thinking_level}
+
         config = types.GenerateContentConfig(
             system_instruction=system_prompt if (system_prompt.strip() and not is_gemma) else None,
             response_modalities=modalities,
             speech_config=speech_config,
+            thinking_config=thinking_config,
         )
 
         response = client.models.generate_content(
