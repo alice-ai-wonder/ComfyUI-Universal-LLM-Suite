@@ -68,6 +68,9 @@ class OpenAIModelConfigurator:
                 "voice_name": (OPENAI_VOICES, {
                     "default": "alloy",
                 }),
+                "reasoning_effort": (["default", "low", "medium", "high"], {
+                    "default": "default"
+                }),
             },
         }
 
@@ -75,9 +78,9 @@ class OpenAIModelConfigurator:
     RETURN_NAMES = ("openai_model",)
     FUNCTION = "configure"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Configure the OpenAI API key and select a model with optional TTS voice."
+    DESCRIPTION = "Configure the OpenAI API key, select a model, and set thinking/reasoning effort."
 
-    def configure(self, api_key: str, model_name: str, generate_audio: bool, voice_name: str):
+    def configure(self, api_key: str, model_name: str, generate_audio: bool, voice_name: str, reasoning_effort: str = "default"):
         if not api_key or not api_key.strip():
             raise ValueError("❌ API key must not be empty.")
 
@@ -90,8 +93,9 @@ class OpenAIModelConfigurator:
             "api_key": api_key.strip(),
             "generate_audio": generate_audio,
             "voice_name": voice_name,
+            "reasoning_effort": reasoning_effort,
         }
-        print(f"✅ [Universal LLM Suite] Configured OpenAI model: {model_name} (Voice Enabled: {generate_audio})")
+        print(f"✅ [Universal LLM Suite] Configured OpenAI model: {model_name} (Voice: {generate_audio}, Reasoning: {reasoning_effort})")
         return (payload,)
 
 
@@ -170,10 +174,15 @@ class OpenAIAPIRunner:
             messages.append({"role": "user", "content": content})
 
             # Call OpenAI Chat Completions API
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages
-            )
+            kwargs = {
+                "model": model_name,
+                "messages": messages
+            }
+            reasoning = openai_model.get("reasoning_effort", "default")
+            if reasoning != "default":
+                kwargs["reasoning_effort"] = reasoning
+
+            response = client.chat.completions.create(**kwargs)
             
             response_text = response.choices[0].message.content or ""
 
