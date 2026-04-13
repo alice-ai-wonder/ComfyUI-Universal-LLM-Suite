@@ -3,6 +3,32 @@
 # ComfyUI Custom Node Package
 # =============================================================================
 
+import sys
+import subprocess
+
+def ensure_dependencies():
+    """Auto-install missing dependencies on first load."""
+    packages = ["google-genai", "openai"]
+    for pkg in packages:
+        try:
+            if pkg == "google-genai":
+                import google.genai
+            elif pkg == "openai":
+                import openai
+        except ImportError:
+            print(f"📦 [Universal LLM Suite] Installing missing package: {pkg}...")
+            try:
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", pkg],
+                    stdout=subprocess.DEVNULL,
+                )
+                print(f"✅ [Universal LLM Suite] Successfully installed {pkg}")
+            except Exception as e:
+                print(f"❌ [Universal LLM Suite] Failed to install {pkg}: {e}")
+
+# Run dependency check immediately before loading nodes
+ensure_dependencies()
+
 from .nodes_base import (
     LLMDualPrompt,
     LLMTextDisplay,
