@@ -375,8 +375,7 @@ class GeminiAPIRunner:
                                     all_audio_bytes += part.inline_data.data
                         if hasattr(sc, 'output_transcription') and sc.output_transcription:
                             if hasattr(sc.output_transcription, 'text') and sc.output_transcription.text:
-                                # This is user speech transcription, let's keep it clean or ignore
-                                pass
+                                all_text += sc.output_transcription.text
                         if sc.turn_complete:
                             break
 
