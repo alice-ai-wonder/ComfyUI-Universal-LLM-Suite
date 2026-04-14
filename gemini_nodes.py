@@ -247,6 +247,12 @@ class GeminiAPIRunner:
                         response_thoughts += part.text
                     else:
                         response_text += part.text
+        
+        # Fallback if manual extraction missed something or structure was different
+        if not response_text and hasattr(response, "text") and response.text:
+            response_text = response.text
+            # If we used the fallback, we might have thoughts in the text, 
+            # but it's better than no text at all.
 
         response_audio = None
         if hasattr(response, "parts") and response.parts:
@@ -267,7 +273,7 @@ class GeminiAPIRunner:
         if response_audio is None:
             response_audio = empty_audio()
             
-        return (response_text, response_audio, response_thoughts,)
+        return response_text, response_thoughts, response_audio
 
     def _run_live(self, gemini_model, client, model_name, system_prompt, user_prompt, audio_input):
         types = _get_genai_types()
