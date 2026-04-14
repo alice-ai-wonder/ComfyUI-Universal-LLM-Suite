@@ -309,6 +309,7 @@ class GeminiAPIRunner:
             config_args = {
                 "response_modalities": ["AUDIO"],
                 "speech_config": speech_config,
+                "output_audio_transcription": types.AudioTranscriptionConfig(),
                 "system_instruction": types.Content(
                     parts=[types.Part(text=system_prompt)]
                 ) if system_prompt.strip() else None,

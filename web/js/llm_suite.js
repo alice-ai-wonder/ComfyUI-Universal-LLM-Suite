@@ -24,7 +24,7 @@ app.registerExtension({
             if (this._llmConfigured) return r;
             this._llmConfigured = true;
 
-            // ── Mask the api_key widget with custom draw ──
+            // ── Mask the api_key widget with custom draw (Legacy Canvas UI) ──
             const apiWidget = this.widgets?.find(w => w.name === "api_key");
             if (apiWidget) {
                 apiWidget.draw = function (ctx, node, widget_width, y, H) {
@@ -78,6 +78,36 @@ app.registerExtension({
 
                     ctx.restore(); // Remove clip
                 };
+
+                // ── Mask for Nodes 2.0 / DOM-based UI ──
+                // Convert any <input> element for api_key to password type
+                const maskDomInputs = () => {
+                    if (apiWidget.element) {
+                        const inputs = apiWidget.element.querySelectorAll
+                            ? apiWidget.element.querySelectorAll("input[type='text']")
+                            : [];
+                        inputs.forEach(inp => { inp.type = "password"; });
+                        // If the widget element itself is an input
+                        if (apiWidget.element.tagName === "INPUT" && apiWidget.element.type === "text") {
+                            apiWidget.element.type = "password";
+                        }
+                    }
+                    // Also check the node's DOM element for any input with matching data attributes
+                    const nodeEl = this.domElement || this.element;
+                    if (nodeEl) {
+                        nodeEl.querySelectorAll("input").forEach(inp => {
+                            if (inp.dataset?.widgetName === "api_key" ||
+                                inp.name === "api_key" ||
+                                inp.placeholder?.toLowerCase().includes("api key")) {
+                                inp.type = "password";
+                            }
+                        });
+                    }
+                };
+                // Run immediately and also observe for late DOM creation
+                setTimeout(maskDomInputs, 100);
+                setTimeout(maskDomInputs, 500);
+                setTimeout(maskDomInputs, 1500);
             }
 
             // ── Reload Button (no separator) ──
