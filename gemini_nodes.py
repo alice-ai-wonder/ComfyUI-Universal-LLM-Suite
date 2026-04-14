@@ -168,11 +168,11 @@ class GeminiAPIRunner:
             },
         }
 
-    RETURN_TYPES = ("STRING", "AUDIO",)
-    RETURN_NAMES = ("response_text", "response_audio",)
+    RETURN_TYPES = ("STRING", "AUDIO", "STRING",)
+    RETURN_NAMES = ("response_text", "response_audio", "response_thoughts",)
     FUNCTION = "run"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Send prompts to the Gemini API and receive text & audio."
+    DESCRIPTION = "Send prompts to the Gemini API and receive text, audio, & thoughts."
 
     def _run_standard(self, gemini_model, client, model_name, system_prompt, user_prompt, audio_input, image_input):
         types = _get_genai_types()
@@ -205,7 +205,7 @@ class GeminiAPIRunner:
         modalities = ["TEXT"]
         if "gemini-3" in model_name or "audio" in model_name or "tts" in model_name:
             modalities = ["AUDIO", "TEXT"]
-            
+        
         speech_config = None
         if "AUDIO" in modalities:
             speech_config = types.SpeechConfig(
@@ -220,10 +220,9 @@ class GeminiAPIRunner:
         thinking_config = None
         if thinking_level != "default":
             try:
-                thinking_config = types.ThinkingConfig(thinking_level=thinking_level)
+                thinking_config = types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
             except Exception:
-                # Fallback if SDK structure differs
-                thinking_config = {"thinking_level": thinking_level}
+                thinking_config = {"include_thoughts": True, "thinking_level": thinking_level}
 
         config = types.GenerateContentConfig(
             system_instruction=system_prompt if (system_prompt.strip() and not is_gemma) else None,
@@ -238,11 +237,22 @@ class GeminiAPIRunner:
             config=config,
         )
 
-        response_text = response.text if hasattr(response, "text") and response.text else ""
+        # Manually extract text and thoughts to avoid pollution
+        response_text = ""
+        response_thoughts = ""
+        if response.candidates:
+            for part in response.candidates[0].content.parts:
+                if part.text:
+                    if getattr(part, 'thought', False):
+                        response_thoughts += part.text
+                    else:
+                        response_text += part.text
+
         response_audio = None
         if hasattr(response, "parts") and response.parts:
              for part in response.parts:
                  if hasattr(part, "inline_data") and part.inline_data:
+                     # ... existing audio extraction logic stays the same ...
                      mime = part.inline_data.mime_type
                      data = part.inline_data.data
                      if mime and mime.startswith("audio/"):
@@ -257,7 +267,7 @@ class GeminiAPIRunner:
         if response_audio is None:
             response_audio = empty_audio()
             
-        return response_text, response_audio
+        return (response_text, response_audio, response_thoughts,)
 
     def _run_live(self, gemini_model, client, model_name, system_prompt, user_prompt, audio_input):
         types = _get_genai_types()
@@ -271,9 +281,18 @@ class GeminiAPIRunner:
                 )
             )
 
+            thinking_level = gemini_model.get("thinking_level", "default")
+            thinking_config = None
+            if thinking_level != "default":
+                try:
+                    thinking_config = types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
+                except Exception:
+                    thinking_config = {"include_thoughts": True, "thinking_level": thinking_level}
+
             config = types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 speech_config=speech_config,
+                thinking_config=thinking_config,
                 system_instruction=types.Content(
                     parts=[types.Part(text=system_prompt)]
                 ) if system_prompt.strip() else None,
@@ -281,6 +300,7 @@ class GeminiAPIRunner:
 
             all_audio_bytes = b""
             all_text = ""
+            all_thoughts = ""
 
             async with client.aio.live.connect(model=model_name, config=config) as session:
                 pcm_16k = None
@@ -327,36 +347,40 @@ class GeminiAPIRunner:
                         if sc.model_turn and sc.model_turn.parts:
                             for part in sc.model_turn.parts:
                                 if part.text:
-                                    all_text += part.text
+                                    if getattr(part, 'thought', False):
+                                        all_thoughts += part.text
+                                    else:
+                                        all_text += part.text
                                 if part.inline_data and part.inline_data.data:
                                     all_audio_bytes += part.inline_data.data
                         if hasattr(sc, 'output_transcription') and sc.output_transcription:
                             if hasattr(sc.output_transcription, 'text') and sc.output_transcription.text:
-                                all_text += sc.output_transcription.text
+                                # This is user speech transcription, let's keep it clean or ignore
+                                pass
                         if sc.turn_complete:
                             break
 
-            return all_text, all_audio_bytes
+            return all_text, all_thoughts, all_audio_bytes
 
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as pool:
-                    text, audio_bytes = pool.submit(
+                    text, thoughts, audio_bytes = pool.submit(
                         lambda: asyncio.run(_live_session())
                     ).result()
             else:
-                text, audio_bytes = loop.run_until_complete(_live_session())
+                text, thoughts, audio_bytes = loop.run_until_complete(_live_session())
         except RuntimeError:
-            text, audio_bytes = asyncio.run(_live_session())
+            text, thoughts, audio_bytes = asyncio.run(_live_session())
 
         if audio_bytes and len(audio_bytes) > 0:
             audio_dict = pcm_bytes_to_audio_dict(audio_bytes, sample_rate=24000)
         else:
             audio_dict = empty_audio()
 
-        return text, audio_dict
+        return text, thoughts, audio_dict
 
     def run(self, gemini_model: dict, system_prompt: str, user_prompt: str,
             image_input=None, audio_input=None):
@@ -374,12 +398,13 @@ class GeminiAPIRunner:
                         f"❌ Model '{model_name}' (Live API) does not support image input.\n"
                         f"   Use a standard model for image analysis."
                     )
-                text, audio = self._run_live(gemini_model, client, model_name, system_prompt, user_prompt, audio_input)
+                resp_text, resp_thoughts, resp_audio = self._run_live(gemini_model, client, model_name, system_prompt, user_prompt, audio_input)
             else:
-                text, audio = self._run_standard(gemini_model, client, model_name, system_prompt, user_prompt, audio_input, image_input)
+                resp_text, resp_thoughts, resp_audio = self._run_standard(gemini_model, client, model_name, system_prompt, user_prompt, audio_input, image_input)
         except Exception as e:
             traceback.print_exc()
-            text = f"❌ Gemini API Error: {e}"
-            audio = empty_audio()
+            resp_text = f"❌ Gemini API Error: {e}"
+            resp_thoughts = ""
+            resp_audio = empty_audio()
 
-        return (text, audio,)
+        return (resp_text, resp_audio, resp_thoughts,)

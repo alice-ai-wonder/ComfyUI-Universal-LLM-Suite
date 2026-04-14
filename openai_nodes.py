@@ -128,11 +128,11 @@ class OpenAIAPIRunner:
             },
         }
 
-    RETURN_TYPES = ("STRING", "AUDIO",)
-    RETURN_NAMES = ("response_text", "response_audio",)
+    RETURN_TYPES = ("STRING", "AUDIO", "STRING",)
+    RETURN_NAMES = ("response_text", "response_audio", "response_thoughts",)
     FUNCTION = "run"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Send prompts to OpenAI and receive text (and optional audio)."
+    DESCRIPTION = "Send prompts to OpenAI and receive text, audio, & thoughts."
 
     def run(self, openai_model: dict, system_prompt: str, user_prompt: str, image_input=None):
 
@@ -185,6 +185,15 @@ class OpenAIAPIRunner:
             response = client.chat.completions.create(**kwargs)
             
             response_text = response.choices[0].message.content or ""
+            response_thoughts = ""
+            
+            # Extract reasoning_content for o1/o3 models if available
+            if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
+                response_thoughts = response.choices[0].message.reasoning_content
+            # Some versions might put it in a different field or it might be null
+            elif not response_text and hasattr(response.choices[0].message, "content") and not response.choices[0].message.content:
+                 # Check for refusal or other fields if needed, but usually content is just empty during reasoning
+                 pass
 
             # Check if we should generate TTS
             audio_dict = empty_audio()
@@ -209,6 +218,7 @@ class OpenAIAPIRunner:
         except Exception as e:
             traceback.print_exc()
             response_text = f"❌ OpenAI API Error: {e}"
+            response_thoughts = ""
             audio_dict = empty_audio()
 
-        return (response_text, audio_dict,)
+        return (response_text, audio_dict, response_thoughts,)
