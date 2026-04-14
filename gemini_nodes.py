@@ -218,18 +218,25 @@ class GeminiAPIRunner:
 
         thinking_level = gemini_model.get("thinking_level", "default")
         thinking_config = None
-        if thinking_level != "default":
+        
+        # Only use thinking_level for Gemini 3+ and Gemma 4+
+        supports_thinking = model_name.startswith("gemini-3") or model_name.startswith("gemma-4")
+        
+        if supports_thinking and thinking_level != "default":
             try:
                 thinking_config = types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
             except Exception:
                 thinking_config = {"include_thoughts": True, "thinking_level": thinking_level}
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt if (system_prompt.strip() and not is_gemma) else None,
-            response_modalities=modalities,
-            speech_config=speech_config,
-            thinking_config=thinking_config,
-        )
+        config_args = {
+            "system_instruction": system_prompt if (system_prompt.strip() and not is_gemma) else None,
+            "response_modalities": modalities,
+            "speech_config": speech_config,
+        }
+        if thinking_config:
+            config_args["thinking_config"] = thinking_config
+
+        config = types.GenerateContentConfig(**config_args)
 
         response = client.models.generate_content(
             model=model_name,
@@ -289,20 +296,27 @@ class GeminiAPIRunner:
 
             thinking_level = gemini_model.get("thinking_level", "default")
             thinking_config = None
-            if thinking_level != "default":
+            
+            # Support check for thoughts (Live API support for thinking is model-dependent)
+            supports_thinking = model_name.startswith("gemini-3") or model_name.startswith("gemma-4")
+            
+            if supports_thinking and thinking_level != "default":
                 try:
                     thinking_config = types.ThinkingConfig(include_thoughts=True, thinking_level=thinking_level)
                 except Exception:
                     thinking_config = {"include_thoughts": True, "thinking_level": thinking_level}
 
-            config = types.LiveConnectConfig(
-                response_modalities=["AUDIO"],
-                speech_config=speech_config,
-                thinking_config=thinking_config,
-                system_instruction=types.Content(
+            config_args = {
+                "response_modalities": ["AUDIO"],
+                "speech_config": speech_config,
+                "system_instruction": types.Content(
                     parts=[types.Part(text=system_prompt)]
                 ) if system_prompt.strip() else None,
-            )
+            }
+            if thinking_config:
+                config_args["thinking_config"] = thinking_config
+
+            config = types.LiveConnectConfig(**config_args)
 
             all_audio_bytes = b""
             all_text = ""
