@@ -8,13 +8,15 @@ import subprocess
 
 def ensure_dependencies():
     """Auto-install missing dependencies on first load."""
-    packages = ["google-genai", "openai"]
+    packages = ["google-genai", "openai", "librosa"]
     for pkg in packages:
         try:
             if pkg == "google-genai":
                 import google.genai
             elif pkg == "openai":
                 import openai
+            elif pkg == "librosa":
+                import librosa
         except ImportError:
             print(f"📦 [Universal LLM Suite] Installing missing package: {pkg}...")
             try:
